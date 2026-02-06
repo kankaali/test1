@@ -9,16 +9,20 @@ const CENTER = { x: canvas.width / 2, y: canvas.height * 0.28 }
 const CORE_RADIUS = 26
 
 // ================= PHYSICS =================
-const G = 0.45                     // stronger inward pull
-const SOFTEN = 1100
+const G = 0.58                      // 🔥 stronger blackhole pull
+const SOFTEN = 1000
 
-// angular momentum barrier (creates real orbit bowl)
-const L_BARRIER = 2400
+// ---- QUADRATIC BOWL (CIRCULAR) ----
+const BOWL_RADIUS = Math.min(canvas.width, canvas.height) * 0.42
+const BOWL_K = 0.0024               // stiffness (radial spring)
 
-const BASE_DAMP = 0.9985
+// angular momentum barrier (keeps orbit shape)
+const L_BARRIER = 2200
+
+const BASE_DAMP = 0.998
 const SURFACE_DAMP = 0.94
 
-// fluid shell between orbit & surface
+// fluid shell near surface
 const CRIT_RADIUS = CORE_RADIUS + 36
 const CRIT_WIDTH  = 26
 
@@ -74,11 +78,19 @@ function applyPhysics(b) {
   const ty = nx
   const vt = b.vel.x * tx + b.vel.y * ty
 
-  // gravity + angular momentum barrier
-  const g = -G / (r2 + SOFTEN)
-  const barrier = (vt * vt) * L_BARRIER / (r2 * r)
+  // -------- PURE GRAVITY --------
+  let ar = -G / (r2 + SOFTEN)
 
-  let newVr = vr + g + barrier
+  // -------- QUADRATIC CIRCULAR BOWL --------
+  if (r > BOWL_RADIUS) {
+    const excess = r - BOWL_RADIUS
+    ar -= excess * excess * BOWL_K   // radial-only → perfect circle
+  }
+
+  // -------- ANGULAR MOMENTUM BARRIER --------
+  ar += (vt * vt) * L_BARRIER / (r2 * r)
+
+  let newVr = vr + ar
   let newVt = vt * BASE_DAMP
 
   // -------- FLUID DAMPING SHELL --------
@@ -158,9 +170,9 @@ function drawTrajectory() {
   if (!aiming) return
 
   let pos = { ...currentBall.pos }
-
   let ix = (aimStart.x - aimNow.x) * LAUNCH_SCALE
   let iy = (aimStart.y - aimNow.y) * LAUNCH_SCALE
+
   const mag = Math.hypot(ix, iy)
   if (mag > MAX_LAUNCH_IMPULSE) {
     ix *= MAX_LAUNCH_IMPULSE / mag
