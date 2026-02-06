@@ -9,19 +9,22 @@ const CENTER = { x: canvas.width / 2, y: canvas.height * 0.28 }
 const CORE_RADIUS = 26
 
 // ================= PHYSICS =================
-const G = 0.38                    // pure inward gravity
-const SOFTEN = 1800
+const G = 0.45                     // stronger inward pull
+const SOFTEN = 1100
 
-const BASE_DAMP = 0.996
+// angular momentum barrier (creates real orbit bowl)
+const L_BARRIER = 2400
+
+const BASE_DAMP = 0.9985
 const SURFACE_DAMP = 0.94
 
-// ---- LAUNCH ----
-const LAUNCH_SCALE = 0.045
-const MAX_LAUNCH_SPEED = 7.2      // 🔒 CLAMPED (Sputnik rule)
+// fluid shell between orbit & surface
+const CRIT_RADIUS = CORE_RADIUS + 36
+const CRIT_WIDTH  = 26
 
-// ---- QUADRATIC BOWL ----
-const BOWL_RADIUS = Math.min(canvas.width, canvas.height) * 0.38
-const BOWL_K = 0.0018              // bowl stiffness (turnaround feel)
+// ================= LAUNCH =================
+const LAUNCH_SCALE = 0.045
+const MAX_LAUNCH_IMPULSE = 7.2
 
 // ================= GAME =================
 let balls = []
@@ -41,7 +44,7 @@ function createBall(x, y, lvl, vx = 0, vy = 0) {
     r,
     lvl,
     surface: false,
-    drift: (Math.random() - 0.5) * 0.00035
+    drift: (Math.random() - 0.5) * 0.00045
   }
 }
 
@@ -57,59 +60,52 @@ function spawn() {
 
 // ================= PHYSICS =================
 function applyPhysics(b) {
-  const dx = CENTER.x - b.pos.x
-  const dy = CENTER.y - b.pos.y
-  const d2 = dx * dx + dy * dy
-  const d = Math.sqrt(d2) + 0.0001
+  const rx = b.pos.x - CENTER.x
+  const ry = b.pos.y - CENTER.y
+  const r2 = rx * rx + ry * ry + 0.0001
+  const r  = Math.sqrt(r2)
 
-  const nx = dx / d
-  const ny = dy / d
+  const nx = rx / r
+  const ny = ry / r
 
-  // ---- PURE GRAVITY ----
-  const g = G / (d2 + SOFTEN)
-  b.vel.x += nx * g
-  b.vel.y += ny * g
+  // decompose velocity
+  const vr = b.vel.x * nx + b.vel.y * ny
+  const tx = -ny
+  const ty = nx
+  const vt = b.vel.x * tx + b.vel.y * ty
 
-  // ---- QUADRATIC BOWL (ENERGY TURNAROUND) ----
-  if (d > BOWL_RADIUS) {
-    const excess = d - BOWL_RADIUS
-    const fx = nx * excess * BOWL_K
-    const fy = ny * excess * BOWL_K
-    b.vel.x += fx
-    b.vel.y += fy
+  // gravity + angular momentum barrier
+  const g = -G / (r2 + SOFTEN)
+  const barrier = (vt * vt) * L_BARRIER / (r2 * r)
+
+  let newVr = vr + g + barrier
+  let newVt = vt * BASE_DAMP
+
+  // -------- FLUID DAMPING SHELL --------
+  if (r < CRIT_RADIUS + CRIT_WIDTH) {
+    const t = Math.min(1, (CRIT_RADIUS + CRIT_WIDTH - r) / CRIT_WIDTH)
+    newVr *= (1 - 0.95 * t)
+    newVt *= (1 - 0.35 * t)
   }
 
-  // ---- GLOBAL DAMPING (size matters) ----
-  const sizeDamp = 1 - b.r * 0.00018
-  b.vel.x *= BASE_DAMP * sizeDamp
-  b.vel.y *= BASE_DAMP * sizeDamp
-
-  // ---- BLACKHOLE SURFACE ----
+  // -------- BLACKHOLE SURFACE --------
   const surfaceDist = CORE_RADIUS + b.r
-  if (d < surfaceDist + 14) {
-    const vx = b.vel.x
-    const vy = b.vel.y
-
-    const radial = vx * nx + vy * ny
-    const tx = -ny
-    const ty = nx
-    let tangential = vx * tx + vy * ty
-
-    // prevent penetration
-    if (radial < 0) {
-      b.vel.x -= nx * radial
-      b.vel.y -= ny * radial
-    }
-
-    tangential *= SURFACE_DAMP
-    b.vel.x = tx * tangential + tx * b.drift
-    b.vel.y = ty * tangential + ty * b.drift
-
+  if (r <= surfaceDist) {
     b.surface = true
-    b.pos.x = CENTER.x - nx * surfaceDist
-    b.pos.y = CENTER.y - ny * surfaceDist
+
+    if (newVr < 0) newVr = 0
+    newVt *= SURFACE_DAMP
+    newVt += b.drift
+
+    b.vel.x = tx * newVt
+    b.vel.y = ty * newVt
+
+    b.pos.x = CENTER.x + nx * surfaceDist
+    b.pos.y = CENTER.y + ny * surfaceDist
   } else {
     b.surface = false
+    b.vel.x = nx * newVr + tx * newVt
+    b.vel.y = ny * newVr + ty * newVt
   }
 
   b.pos.x += b.vel.x
@@ -138,15 +134,6 @@ function resolveCollisions() {
         b.pos.x += nx * overlap * 0.5
         b.pos.y += ny * overlap * 0.5
 
-        if (a.surface || b.surface) {
-          const tx = -ny
-          const ty = nx
-          a.vel.x += tx * 0.01
-          a.vel.y += ty * 0.01
-          b.vel.x -= tx * 0.01
-          b.vel.y -= ty * 0.01
-        }
-
         if (a.lvl === b.lvl) {
           merge(a, b)
           return
@@ -172,32 +159,30 @@ function drawTrajectory() {
 
   let pos = { ...currentBall.pos }
 
-  let vx = (aimStart.x - aimNow.x) * LAUNCH_SCALE
-  let vy = (aimStart.y - aimNow.y) * LAUNCH_SCALE
-  const mag = Math.hypot(vx, vy)
-  if (mag > MAX_LAUNCH_SPEED) {
-    vx *= MAX_LAUNCH_SPEED / mag
-    vy *= MAX_LAUNCH_SPEED / mag
+  let ix = (aimStart.x - aimNow.x) * LAUNCH_SCALE
+  let iy = (aimStart.y - aimNow.y) * LAUNCH_SCALE
+  const mag = Math.hypot(ix, iy)
+  if (mag > MAX_LAUNCH_IMPULSE) {
+    ix *= MAX_LAUNCH_IMPULSE / mag
+    iy *= MAX_LAUNCH_IMPULSE / mag
   }
 
-  let vel = { x: vx, y: vy }
+  let vel = { x: ix, y: iy }
 
-  for (let i = 0; i < 160; i++) {
+  for (let i = 0; i < 180; i++) {
     const fake = {
       pos: { ...pos },
       vel: { ...vel },
       r: currentBall.r,
-      drift: 0
+      drift: 0,
+      surface: false
     }
 
     applyPhysics(fake)
     pos = fake.pos
     vel = fake.vel
 
-    const d = Math.hypot(pos.x - CENTER.x, pos.y - CENTER.y)
-    if (d < CORE_RADIUS + currentBall.r) break
-
-    ctx.fillStyle = `rgba(255,255,255,${1 - i / 160})`
+    ctx.fillStyle = `rgba(255,255,255,${1 - i / 180})`
     ctx.beginPath()
     ctx.arc(pos.x, pos.y, 2, 0, Math.PI * 2)
     ctx.fill()
@@ -255,16 +240,16 @@ canvas.addEventListener("touchmove", e => {
 canvas.addEventListener("touchend", () => {
   if (!aiming) return
 
-  let vx = (aimStart.x - aimNow.x) * LAUNCH_SCALE
-  let vy = (aimStart.y - aimNow.y) * LAUNCH_SCALE
-  const mag = Math.hypot(vx, vy)
-  if (mag > MAX_LAUNCH_SPEED) {
-    vx *= MAX_LAUNCH_SPEED / mag
-    vy *= MAX_LAUNCH_SPEED / mag
+  let ix = (aimStart.x - aimNow.x) * LAUNCH_SCALE
+  let iy = (aimStart.y - aimNow.y) * LAUNCH_SCALE
+  const mag = Math.hypot(ix, iy)
+  if (mag > MAX_LAUNCH_IMPULSE) {
+    ix *= MAX_LAUNCH_IMPULSE / mag
+    iy *= MAX_LAUNCH_IMPULSE / mag
   }
 
-  currentBall.vel.x = vx
-  currentBall.vel.y = vy
+  currentBall.vel.x = ix
+  currentBall.vel.y = iy
   balls.push(currentBall)
   spawn()
   aiming = false
