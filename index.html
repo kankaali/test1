@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
+  />
+  <title>Orbital Merge</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+
+<body>
+  <!-- Mobile-only warning -->
+  <div id="rotate-warning">
+    Rotate to portrait mode 📱
+  </div>
+
+  <!-- Game Wrapper -->
+  <div id="game-container">
+
+    <!-- UI Layer -->
+    <div id="ui">
+      <div id="top-left">
+        <div class="label">NEXT</div>
+        <canvas id="next-preview"></canvas>
+      </div>
+
+      <div id="top-center"></div>
+
+      <div id="right-ui">
+        <button>ℹ️</button>
+        <button>⚙️</button>
+      </div>
+
+      <div id="bottom-left">
+        Score: <span id="score">0</span>
+      </div>
+    </div>
+
+    <!-- Main Game Canvas -->
+    <canvas id="game"></canvas>
+
+  </div>
+
+  <style> /* ===== RESET ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  touch-action: none;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #333155;
+  font-family: system-ui, sans-serif;
+  color: #fff;
+}
+
+/* ===== ROTATION BLOCK ===== */
+#rotate-warning {
+  position: fixed;
+  inset: 0;
+  display: none;
+  justify-content: center;
+  align-items: center;
+  background: #000;
+  z-index: 999;
+  font-size: 1.2rem;
+}
+
+/* Show warning if landscape */
+@media (orientation: landscape) {
+  #game-container { display: none; }
+  #rotate-warning { display: flex; }
+}
+
+    /* DEV MODE: allow desktop testing */
+@media (pointer: fine) {
+  #game-container { display: block !important; }
+  #rotate-warning { display: none !important; }
+}
+
+
+/* ===== GAME CONTAINER ===== */
+#game-container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+}
+
+/* ===== CANVAS ===== */
+#game {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #333155;
+}
+
+/* ===== UI OVERLAY ===== */
+#ui {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Top-left */
+#top-left {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  text-align: center;
+}
+
+#top-left .label {
+  font-size: 10px;
+  opacity: 0.6;
+  margin-bottom: 4px;
+}
+
+#next-preview {
+  width: 40px;
+  height: 40px;
+  background: #111;
+  border-radius: 50%;
+}
+
+/* Top-center (black hole placeholder) */
+#top-center {
+  position: absolute;
+  top: 40px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #000;
+}
+
+/* Right buttons */
+#right-ui {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+#right-ui button {
+  pointer-events: auto;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: #111;
+  border: none;
+  color: #fff;
+  font-size: 18px;
+}
+
+/* Bottom-left score */
+#bottom-left {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  font-size: 14px;
+  opacity: 0.9;
+}
+</style>
+
+  <script src="game.js"></script>
+</body>
+</html>
